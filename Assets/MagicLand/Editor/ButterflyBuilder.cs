@@ -86,8 +86,10 @@ namespace MagicLand.EditorTools
             return MagicLandSetup.SaveMesh(kit.ToMesh("Butterfly Body"), "Butterfly Body");
         }
 
-        public static Transform Create(Transform parent, Material bodyMat, Material[] wingMats)
+        public static Transform Create(Transform parent, Material bodyMat, Material[] wingMats,
+            System.Func<float, float, float> groundHeight = null, int count = 16)
         {
+            groundHeight ??= ForestGround.HeightAt;
             var wingMesh = WingMesh();
             var bodyMesh = BodyMesh();
             var root = new GameObject("Butterflies");
@@ -97,7 +99,7 @@ namespace MagicLand.EditorTools
             var rnd = new System.Random(11);
             float R(float min, float max) => min + (float)rnd.NextDouble() * (max - min);
 
-            for (int i = 0; i < 16; i++)
+            for (int i = 0; i < count; i++)
             {
                 bool near = i < 4;
                 Vector3 pos;
@@ -109,7 +111,7 @@ namespace MagicLand.EditorTools
                 {
                     float z = R(3f, 11f);
                     float x = R(-1f, 1f) * (2f + z * 0.35f);
-                    pos = new Vector3(x, ForestGround.HeightAt(x, z) + R(0.5f, 1.6f), z);
+                    pos = new Vector3(x, groundHeight(x, z) + R(0.5f, 1.6f), z);
                 }
 
                 var go = new GameObject("Butterfly " + i);

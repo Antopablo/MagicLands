@@ -61,6 +61,8 @@ namespace MagicLand
         [SerializeField] AudioClip[] songs = new AudioClip[0];
         [SerializeField] float songVolume = 0.35f;
         [SerializeField] int seed = 21;
+        [Tooltip("Pecking spots follow the volcano ground instead of the forest ground.")]
+        [SerializeField] bool volcanoGround;
 
         enum State { Idle, Turn, Sing, Fly, Peck }
 
@@ -85,8 +87,9 @@ namespace MagicLand
         float m_Time;
         float m_SongBusyUntil;
 
-        public void Configure(BirdRig[] rigs, Vector3[] perchPoints, bool[] ground, AudioClip[] clips)
+        public void Configure(BirdRig[] rigs, Vector3[] perchPoints, bool[] ground, AudioClip[] clips, bool onVolcano = false)
         {
+            volcanoGround = onVolcano;
             birds = rigs;
             perches = perchPoints;
             groundPerches = ground;
@@ -258,7 +261,7 @@ namespace MagicLand
                         Vector3 next = b.position + step;
                         if ((next - home).magnitude > 0.45f)
                             next = home + (b.position - home) * 0.5f;
-                        next.y = ForestGround.HeightAt(next.x, next.z);
+                        next.y = volcanoGround ? VolcanoGround.HeightAt(next.x, next.z) : ForestGround.HeightAt(next.x, next.z);
                         b.targetYaw = Mathf.Atan2(next.x - b.position.x, next.z - b.position.z) * Mathf.Rad2Deg;
                         b.position = next;
                         b.hop = 1f;

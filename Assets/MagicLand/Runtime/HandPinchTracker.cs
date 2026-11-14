@@ -46,9 +46,42 @@ namespace MagicLand
             return stillTime >= 0f;
         }
 
+        /// <summary>Index fingertip of a tracked hand (0 = left, 1 = right), even while pinching.</summary>
+        public bool TryGetIndexTip(int hand, out Vector3 position)
+        {
+            position = m_Hands[hand].indexTip;
+            return m_Hands[hand].tracked;
+        }
+
+        /// <summary>Center of a wide open hand held in front of the face, palm toward the eyes.</summary>
+        public bool TryGetOpenPalm(out Vector3 center)
+        {
+            foreach (var hand in m_Hands)
+            {
+                if (hand.tracked && hand.openPalm)
+                {
+                    center = hand.palmCenter;
+                    return true;
+                }
+            }
+            center = default;
+            return false;
+        }
+
+        static readonly XRHandJointID[][] s_Fingers =
+        {
+            new[] { XRHandJointID.IndexProximal, XRHandJointID.IndexIntermediate, XRHandJointID.IndexDistal, XRHandJointID.IndexTip },
+            new[] { XRHandJointID.MiddleProximal, XRHandJointID.MiddleIntermediate, XRHandJointID.MiddleDistal, XRHandJointID.MiddleTip },
+            new[] { XRHandJointID.RingProximal, XRHandJointID.RingIntermediate, XRHandJointID.RingDistal, XRHandJointID.RingTip },
+            new[] { XRHandJointID.LittleProximal, XRHandJointID.LittleIntermediate, XRHandJointID.LittleDistal, XRHandJointID.LittleTip },
+        };
+        readonly Vector3[] m_Joints = new Vector3[4];
+
         class HandState
         {
             public bool tracked;
+            public bool openPalm;
+            public Vector3 palmCenter;
             public bool pinching;
             public float pinchTime;
             public float stillTime;
@@ -128,6 +161,40 @@ namespace MagicLand
 
             SetHand(m_Hands[0], m_Subsystem.leftHand, true);
             SetHand(m_Hands[1], m_Subsystem.rightHand, true);
+            UpdatePalm(m_Hands[0], m_Subsystem.leftHand, true);
+            UpdatePalm(m_Hands[1], m_Subsystem.rightHand, false);
+        }
+
+        void UpdatePalm(HandState state, XRHand hand, bool leftHand)
+        {
+            state.openPalm = false;
+            var cam = Camera.main;
+            if (!state.tracked || cam == null
+                || !TryGetJoint(hand, XRHandJointID.Wrist, out Vector3 wrist)
+                || !TryGetJoint(hand, XRHandJointID.IndexProximal, out Vector3 indexBase)
+                || !TryGetJoint(hand, XRHandJointID.LittleProximal, out Vector3 littleBase))
+                return;
+
+            float straightness = 1f;
+            foreach (var finger in s_Fingers)
+            {
+                for (int i = 0; i < finger.Length; i++)
+                    if (!TryGetJoint(hand, finger[i], out m_Joints[i]))
+                        return;
+                straightness = Mathf.Min(straightness, HandShape.Straightness(m_Joints[0], m_Joints[1], m_Joints[2], m_Joints[3]));
+            }
+
+            state.palmCenter = (wrist + indexBase + littleBase) / 3f;
+            Vector3 normal = HandShape.PalmNormal(wrist, indexBase, littleBase, leftHand);
+            state.openPalm = HandShape.IsOpenPalmFacingHead(state.palmCenter, normal, straightness,
+                cam.transform.position, cam.transform.forward);
+        }
+
+        bool TryGetJoint(XRHand hand, XRHandJointID id, out Vector3 position)
+        {
+            bool ok = hand.GetJoint(id).TryGetPose(out Pose pose);
+            position = ok ? ToWorld(pose.position) : default;
+            return ok;
         }
 
         void SetHand(HandState state, XRHand hand, bool available)

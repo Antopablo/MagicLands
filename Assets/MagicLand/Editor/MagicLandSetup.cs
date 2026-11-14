@@ -19,9 +19,11 @@ namespace MagicLand.EditorTools
     public static class MagicLandSetup
     {
         public const string ScenePath = "Assets/Scenes/MagicLand.unity";
-        const string GeneratedFolder = "Assets/MagicLand/Generated";
-        const string MeshFolder = GeneratedFolder + "/Meshes";
-        const string AudioFolder = GeneratedFolder + "/Audio";
+        public const string SceneName = "MagicLand";
+        internal const string GeneratedFolder = "Assets/MagicLand/Generated";
+        const string DefaultMeshFolder = "Meshes";
+        const string MeshFolder = GeneratedFolder + "/" + DefaultMeshFolder;
+        internal const string AudioFolder = GeneratedFolder + "/Audio";
         const string PackageId = "com.magicland.app";
 
         [MenuItem("MagicLand/Setup Project and Scene")]
@@ -37,7 +39,9 @@ namespace MagicLand.EditorTools
 
             ConfigureProject();
             BuildScene();
-            Debug.Log("[MagicLand] Setup done. Scene: " + ScenePath);
+            VolcanoBuilder.Build();
+            WorldSelectBuilder.Build();
+            Debug.Log("[MagicLand] Setup done. Scenes: " + WorldSelectBuilder.ScenePath + ", " + ScenePath + ", " + VolcanoBuilder.ScenePath);
         }
 
         public static void ConfigureProject()
@@ -95,7 +99,7 @@ namespace MagicLand.EditorTools
 
         // ---------- Materials ----------
 
-        static void EnsureFolder(string parent, string name)
+        internal static void EnsureFolder(string parent, string name)
         {
             if (!AssetDatabase.IsValidFolder(parent + "/" + name))
                 AssetDatabase.CreateFolder(parent, name);
@@ -120,17 +124,23 @@ namespace MagicLand.EditorTools
             return mat;
         }
 
+        static string s_MeshFolder = DefaultMeshFolder;
+
+        /// <summary>Sends the meshes saved next to another subfolder of Generated (null restores the default one).</summary>
+        internal static void UseMeshFolder(string folderName) =>
+            s_MeshFolder = string.IsNullOrEmpty(folderName) ? DefaultMeshFolder : folderName;
+
         /// <summary>Saves a generated mesh as an asset (overwriting any previous version) and returns it.</summary>
         public static Mesh SaveMesh(Mesh mesh, string name)
         {
-            EnsureFolder(GeneratedFolder, "Meshes");
-            string path = $"{MeshFolder}/{name}.asset";
+            EnsureFolder(GeneratedFolder, s_MeshFolder);
+            string path = $"{GeneratedFolder}/{s_MeshFolder}/{name}.asset";
             AssetDatabase.DeleteAsset(path);
             AssetDatabase.CreateAsset(mesh, path);
             return mesh;
         }
 
-        static Material GlowMaterial(string name, Color color, float intensity, bool sphere)
+        internal static Material GlowMaterial(string name, Color color, float intensity, bool sphere)
         {
             return CreateMaterial(name, "MagicLand/Glow", m =>
             {
@@ -156,7 +166,7 @@ namespace MagicLand.EditorTools
             });
         }
 
-        static Material ButterflyMaterial(string name, Texture2D wing, Color color, Color spots)
+        internal static Material ButterflyMaterial(string name, Texture2D wing, Color color, Color spots)
         {
             return CreateMaterial(name, "MagicLand/Butterfly", m =>
             {
@@ -249,7 +259,7 @@ namespace MagicLand.EditorTools
 
         const float ShootingStarDelay = 30f;
 
-        static void CreateShootingStars(Transform parent, Material mat)
+        internal static void CreateShootingStars(Transform parent, Material mat)
         {
             var mesh = SaveMesh(MeteorMesh(7f, 0.35f, 1.1f), "Shooting Star");
             var root = new GameObject("Shooting Stars");
@@ -307,13 +317,14 @@ namespace MagicLand.EditorTools
 
         // ---------- Scene ----------
 
-        static readonly Color DuskHorizon = new Color(0.93f, 0.68f, 0.62f);
+        internal static readonly Color DuskHorizon = new Color(0.93f, 0.68f, 0.62f);
 
         public static void BuildScene()
         {
             EnsureFolder("Assets/MagicLand", "Generated");
+            UseMeshFolder(null);
             AssetDatabase.DeleteAsset(MeshFolder);
-            EnsureFolder(GeneratedFolder, "Meshes");
+            EnsureFolder(GeneratedFolder, DefaultMeshFolder);
             EnsureFolder(GeneratedFolder, "Audio");
             DeerBuilder.Reset();
 
@@ -382,25 +393,7 @@ namespace MagicLand.EditorTools
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = Color.black;
 
-            // XR rig: the camera follows the headset inside the tracking space.
-            var origin = new GameObject("XR Origin");
-            var camGo = new GameObject("Main Camera") { tag = "MainCamera" };
-            camGo.transform.SetParent(origin.transform, false);
-            var cam = camGo.AddComponent<Camera>();
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = DuskHorizon;
-            cam.nearClipPlane = 0.03f;
-            cam.farClipPlane = 200f;
-            var camData = camGo.AddComponent<UniversalAdditionalCameraData>();
-            camData.renderPostProcessing = false;
-            camData.renderShadows = false;
-            camGo.AddComponent<AudioListener>();
-
-            var tpd = camGo.AddComponent<TrackedPoseDriver>();
-            tpd.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
-            tpd.positionInput = new InputActionProperty(new InputAction("Head Position", InputActionType.Value, "<XRHMD>/centerEyePosition", expectedControlType: "Vector3"));
-            tpd.rotationInput = new InputActionProperty(new InputAction("Head Rotation", InputActionType.Value, "<XRHMD>/centerEyeRotation", expectedControlType: "Quaternion"));
-            tpd.trackingStateInput = new InputActionProperty(new InputAction("Head Tracking State", InputActionType.Value, "<XRHMD>/trackingState", expectedControlType: "Integer"));
+            var camGo = CreateRig(DuskHorizon, fingerMat);
 
             // Everything visible lives under the content root, recentered on the user's gaze.
             // The viewer sits in the grass at the edge of a clearing, looking along +Z.
@@ -481,20 +474,69 @@ namespace MagicLand.EditorTools
             birds.transform.SetParent(content.transform, false);
             birds.AddComponent<BirdSongs>().Configure(birdClips);
 
-            // Tracked hands with glowing fingertips.
-            var hands = new GameObject("Hands");
-            hands.AddComponent<HandPinchTracker>().Configure(origin.transform, fingerMat);
+            CreateReturnToMenu();
 
+            WorldSelectBuilder.CaptureCard(content.transform, SceneName);
             EditorSceneManager.SaveScene(scene, ScenePath);
-
-            var scenes = EditorBuildSettings.scenes.Where(s => s.path != ScenePath)
-                .Select(s => new EditorBuildSettingsScene(s.path, false)).ToList();
-            scenes.Insert(0, new EditorBuildSettingsScene(ScenePath, true));
-            EditorBuildSettings.scenes = scenes.ToArray();
+            RegisterScenes();
             AssetDatabase.SaveAssets();
         }
 
-        static GameObject CreateMeshObject(string name, PrimitiveType type, Transform parent, Vector3 localPos, float scale, Material mat)
+        /// <summary>The world selection opens first, then the worlds.</summary>
+        internal static void RegisterScenes()
+        {
+            string[] ours = { WorldSelectBuilder.ScenePath, ScenePath, VolcanoBuilder.ScenePath };
+            var scenes = ours.Where(p => System.IO.File.Exists(p)).Select(p => new EditorBuildSettingsScene(p, true)).ToList();
+            scenes.AddRange(EditorBuildSettings.scenes.Where(s => !ours.Contains(s.path))
+                .Select(s => new EditorBuildSettingsScene(s.path, false)));
+            EditorBuildSettings.scenes = scenes.ToArray();
+        }
+
+        /// <summary>Open hand in front of the face: back to the world selection.</summary>
+        internal static void CreateReturnToMenu()
+        {
+            var palmGlow = CreateMeshObject("Palm Glow", PrimitiveType.Sphere, null, Vector3.zero, 0.07f,
+                GlowMaterial("PalmGlow", new Color(1f, 0.85f, 0.55f), 1.6f, true));
+            var back = new GameObject("Return To Menu");
+            back.AddComponent<ReturnToMenu>().Configure(WorldSelectBuilder.SceneName, palmGlow.transform);
+            palmGlow.transform.SetParent(back.transform, false);
+        }
+
+        /// <summary>
+        /// XR rig shared by every scene: head-tracked camera with a fade cover, and tracked hands
+        /// with glowing fingertips. Returns the camera.
+        /// </summary>
+        internal static GameObject CreateRig(Color background, Material fingerMat)
+        {
+            var origin = new GameObject("XR Origin");
+            var camGo = new GameObject("Main Camera") { tag = "MainCamera" };
+            camGo.transform.SetParent(origin.transform, false);
+            var cam = camGo.AddComponent<Camera>();
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = background;
+            cam.nearClipPlane = 0.03f;
+            cam.farClipPlane = 200f;
+            var camData = camGo.AddComponent<UniversalAdditionalCameraData>();
+            camData.renderPostProcessing = false;
+            camData.renderShadows = false;
+            camGo.AddComponent<AudioListener>();
+
+            var tpd = camGo.AddComponent<TrackedPoseDriver>();
+            tpd.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
+            tpd.positionInput = new InputActionProperty(new InputAction("Head Position", InputActionType.Value, "<XRHMD>/centerEyePosition", expectedControlType: "Vector3"));
+            tpd.rotationInput = new InputActionProperty(new InputAction("Head Rotation", InputActionType.Value, "<XRHMD>/centerEyeRotation", expectedControlType: "Quaternion"));
+            tpd.trackingStateInput = new InputActionProperty(new InputAction("Head Tracking State", InputActionType.Value, "<XRHMD>/trackingState", expectedControlType: "Integer"));
+
+            var fadeMat = CreateMaterial("Fade", "MagicLand/Fade", m => m.SetColor("_Color", Color.black));
+            var cover = CreateMeshObject("Fade Cover", PrimitiveType.Sphere, camGo.transform, Vector3.zero, 0.2f, fadeMat);
+            camGo.AddComponent<ScreenFade>().Configure(cover.GetComponent<MeshRenderer>());
+
+            var hands = new GameObject("Hands");
+            hands.AddComponent<HandPinchTracker>().Configure(origin.transform, fingerMat);
+            return camGo;
+        }
+
+        internal static GameObject CreateMeshObject(string name, PrimitiveType type, Transform parent, Vector3 localPos, float scale, Material mat)
         {
             var go = GameObject.CreatePrimitive(type);
             go.name = name;
@@ -623,7 +665,7 @@ namespace MagicLand.EditorTools
             renderer.receiveShadows = false;
         }
 
-        static void CreateFireflies(Transform parent, Material mat)
+        internal static void CreateFireflies(Transform parent, Material mat)
         {
             var go = new GameObject("Fireflies");
             go.transform.SetParent(parent, false);

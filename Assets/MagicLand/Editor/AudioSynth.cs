@@ -206,6 +206,197 @@ namespace MagicLand.EditorTools
             return Save(folder + "/Frog Call.wav", data, 1, false);
         }
 
+        /// <summary>Seamless loop of soft crackles over a warm low hum, like embers in a fireplace.</summary>
+        public static AudioClip Crackle(string folder)
+        {
+            const float loopSeconds = 16f, fadeSeconds = 1.5f;
+            int n = (int)(loopSeconds * Rate), fade = (int)(fadeSeconds * Rate);
+            var stereo = new float[n * 2];
+            var rnd = new System.Random(23);
+
+            for (int ch = 0; ch < 2; ch++)
+            {
+                // Warm hum: doubly low-passed noise, cross-faded with its own tail to loop cleanly.
+                var hum = new float[n + fade];
+                float low1 = 0f, low2 = 0f, aLow = OnePole(180f);
+                for (int i = -Rate; i < n + fade; i++)
+                {
+                    float white = (float)rnd.NextDouble() * 2f - 1f;
+                    low1 += aLow * (white - low1);
+                    low2 += aLow * (low1 - low2);
+                    if (i >= 0)
+                        hum[i] = low2 * 2.2f;
+                }
+                for (int i = 0; i < n; i++)
+                {
+                    float s = hum[i];
+                    if (i < fade)
+                    {
+                        float x = i / (float)fade;
+                        s = s * Mathf.Sin(x * Mathf.PI * 0.5f) + hum[n + i] * Mathf.Cos(x * Mathf.PI * 0.5f);
+                    }
+                    stereo[i * 2 + ch] = s;
+                }
+
+                // Tiny clicks, mostly quiet, sometimes in a quick little cluster; wrapped around the loop.
+                float t = 0f;
+                while (true)
+                {
+                    t += -Mathf.Log(1f - (float)rnd.NextDouble() * 0.999f) / 5f;
+                    if (t >= loopSeconds)
+                        break;
+                    int burst = rnd.NextDouble() < 0.12 ? 3 + rnd.Next(4) : 1;
+                    for (int b = 0; b < burst; b++)
+                    {
+                        int start = (int)((t + b * (0.015f + 0.03f * (float)rnd.NextDouble())) * Rate);
+                        float amplitude = 0.08f + 0.6f * Mathf.Pow((float)rnd.NextDouble(), 3f);
+                        int length = (int)((0.002f + 0.01f * (float)rnd.NextDouble()) * Rate);
+                        float previous = 0f, smooth = 0f, aClick = OnePole(2500f + 3000f * (float)rnd.NextDouble());
+                        for (int i = 0; i < length; i++)
+                        {
+                            float white = (float)rnd.NextDouble() * 2f - 1f;
+                            float high = white - previous;
+                            previous = white;
+                            smooth += aClick * (high - smooth);
+                            float envelope = Mathf.Exp(-6f * i / length);
+                            int k = (start + i) % n;
+                            stereo[k * 2 + ch] += smooth * envelope * amplitude;
+                        }
+                    }
+                }
+            }
+
+            Normalize(stereo, 0.5f);
+            return Save(folder + "/Crackle.wav", stereo, 2, true);
+        }
+
+        /// <summary>Cute little rising "brrr-ip" from the baby dragon, ending in a soft puff of breath.</summary>
+        public static AudioClip DragonChirp(string folder)
+        {
+            const float seconds = 0.75f;
+            var data = new float[(int)(seconds * Rate)];
+            var rnd = new System.Random(5);
+            float phase = 0f;
+            int chirp = (int)(0.42f * Rate);
+            for (int i = 0; i < chirp; i++)
+            {
+                float x = i / (float)chirp;
+                float frequency = Mathf.Lerp(620f, 1250f, x * x) * (1f + 0.05f * Mathf.Sin(x * Mathf.PI * 2f * 9f));
+                phase += 2f * Mathf.PI * frequency / Rate;
+                float envelope = Mathf.Sin(Mathf.PI * Mathf.Min(1f, x * 1.15f)) * (0.7f + 0.3f * Mathf.Sin(x * Mathf.PI * 2f * 14f));
+                data[i] += (Mathf.Sin(phase) + 0.25f * Mathf.Sin(phase * 2f)) * Mathf.Max(0f, envelope);
+            }
+
+            int puffStart = (int)(0.4f * Rate), puffLength = (int)(0.3f * Rate);
+            float low = 0f, aPuff = OnePole(900f);
+            for (int i = 0; i < puffLength; i++)
+            {
+                float x = i / (float)puffLength;
+                low += aPuff * (((float)rnd.NextDouble() * 2f - 1f) - low);
+                data[puffStart + i] += low * 1.6f * Mathf.Sin(Mathf.PI * x) * (1f - x);
+            }
+            Normalize(data, 0.4f);
+            return Save(folder + "/Dragon Chirp.wav", data, 1, false);
+        }
+
+        /// <summary>Seamless loop of a deep, soft purr: the volcano waking up, warm rather than scary.</summary>
+        public static AudioClip Rumble(string folder)
+        {
+            const float loopSeconds = 8f, fadeSeconds = 1.5f;
+            int n = (int)(loopSeconds * Rate), fade = (int)(fadeSeconds * Rate);
+            var raw = new float[n + fade];
+            var rnd = new System.Random(31);
+            float low1 = 0f, low2 = 0f, low3 = 0f, aLow = OnePole(70f);
+            for (int i = -Rate; i < n + fade; i++)
+            {
+                float white = (float)rnd.NextDouble() * 2f - 1f;
+                low1 += aLow * (white - low1);
+                low2 += aLow * (low1 - low2);
+                low3 += aLow * (low2 - low3);
+                if (i < 0)
+                    continue;
+                float t = i / (float)Rate;
+                // Slow purring pulse on top of the filtered noise.
+                float purr = 0.75f + 0.25f * Mathf.Sin(t * Mathf.PI * 2f * 3f);
+                raw[i] = low3 * purr + 0.004f * Mathf.Sin(t * Mathf.PI * 2f * 55f) * purr;
+            }
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float s = raw[i];
+                if (i < fade)
+                {
+                    float x = i / (float)fade;
+                    s = s * Mathf.Sin(x * Mathf.PI * 0.5f) + raw[n + i] * Mathf.Cos(x * Mathf.PI * 0.5f);
+                }
+                data[i] = s;
+            }
+            Normalize(data, 0.45f);
+            return Save(folder + "/Volcano Rumble.wav", data, 1, true);
+        }
+
+        /// <summary>Soft rising breath of air when the volcano throws up its glowing drops.</summary>
+        public static AudioClip Whoosh(string folder)
+        {
+            const float seconds = 2.4f;
+            var data = new float[(int)(seconds * Rate)];
+            var rnd = new System.Random(37);
+            float low = 0f, band = 0f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                float x = i / (float)data.Length;
+                float cutoff = Mathf.Lerp(250f, 1400f, Mathf.Sin(x * Mathf.PI * 0.5f));
+                float white = (float)rnd.NextDouble() * 2f - 1f;
+                low += OnePole(cutoff) * (white - low);
+                band += OnePole(cutoff * 0.4f) * (low - band);
+                float envelope = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(x / 0.35f)) * Mathf.Pow(1f - x, 1.6f);
+                data[i] = (low - band) * envelope;
+            }
+            Normalize(data, 0.4f);
+            return Save(folder + "/Whoosh.wav", data, 1, false);
+        }
+
+        /// <summary>Twinkling little bells going up a pentatonic scale, like a magic firework.</summary>
+        public static AudioClip Chime(string folder)
+        {
+            const float seconds = 2.2f;
+            var data = new float[(int)(seconds * Rate)];
+            float[] notes = { 1046.5f, 1174.7f, 1318.5f, 1568f, 1760f, 2093f };
+            for (int k = 0; k < notes.Length; k++)
+            {
+                int start = (int)(k * 0.09f * Rate);
+                for (int i = start; i < data.Length; i++)
+                {
+                    float t = (i - start) / (float)Rate;
+                    float envelope = Mathf.Clamp01(t / 0.004f) * Mathf.Exp(-t * 3.2f);
+                    float f = notes[k];
+                    data[i] += envelope * (Mathf.Sin(2f * Mathf.PI * f * t) + 0.3f * Mathf.Sin(2f * Mathf.PI * f * 2.76f * t) * Mathf.Exp(-t * 6f))
+                               * (1f - k * 0.08f);
+                }
+            }
+            data = Echo(data);
+            Normalize(data, 0.35f);
+            return Save(folder + "/Chime.wav", data, 1, false);
+        }
+
+        /// <summary>Soft, round "bloop" of a lava bubble popping.</summary>
+        public static AudioClip Bloop(string folder)
+        {
+            const float seconds = 0.28f;
+            var data = new float[(int)(seconds * Rate)];
+            float phase = 0f;
+            for (int i = 0; i < data.Length; i++)
+            {
+                float x = i / (float)data.Length;
+                float frequency = Mathf.Lerp(180f, 520f, Mathf.Sqrt(x));
+                phase += 2f * Mathf.PI * frequency / Rate;
+                float envelope = Mathf.Clamp01(x / 0.08f) * Mathf.Pow(1f - x, 2f);
+                data[i] = Mathf.Sin(phase) * envelope;
+            }
+            Normalize(data, 0.35f);
+            return Save(folder + "/Bloop.wav", data, 1, false);
+        }
+
         static float[] Echo(float[] dry)
         {
             int delay = (int)(0.13f * Rate), delay2 = (int)(0.21f * Rate);

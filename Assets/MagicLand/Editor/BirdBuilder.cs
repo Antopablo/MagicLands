@@ -270,5 +270,155 @@ namespace MagicLand.EditorTools
             flock.Configure(rigs, delay);
             return flock;
         }
+
+        /// <summary>Forgets the cached bird meshes, so the next birds are saved again (in the current mesh folder).</summary>
+        internal static void ResetCache() => s_Meshes.Clear();
+
+        // ---------- Soaring birds ----------
+
+        static readonly Palette[] SoarPalettes =
+        {
+            new Palette
+            {
+                name = "Ember Bird", back = new Color(0.95f, 0.42f, 0.25f), breast = new Color(1f, 0.78f, 0.35f),
+                belly = new Color(1f, 0.9f, 0.6f), head = new Color(0.95f, 0.4f, 0.3f), wing = new Color(0.9f, 0.32f, 0.28f),
+                tail = new Color(1f, 0.6f, 0.25f), cheek = new Color(1f, 0.8f, 0.4f), beak = new Color(0.35f, 0.22f, 0.2f),
+            },
+            new Palette
+            {
+                name = "Lilac Bird", back = new Color(0.62f, 0.5f, 0.9f), breast = new Color(0.95f, 0.8f, 0.95f),
+                belly = new Color(0.98f, 0.92f, 0.98f), head = new Color(0.55f, 0.45f, 0.88f), wing = new Color(0.5f, 0.4f, 0.82f),
+                tail = new Color(0.55f, 0.45f, 0.85f), cheek = new Color(1f, 0.7f, 0.85f), beak = new Color(1f, 0.75f, 0.45f),
+            },
+        };
+
+        static readonly Palette[] CrystalTreePalettes =
+        {
+            new Palette
+            {
+                name = "Fire Finch", back = new Color(0.95f, 0.36f, 0.22f), breast = new Color(1f, 0.72f, 0.3f),
+                belly = new Color(1f, 0.9f, 0.62f), head = new Color(0.98f, 0.3f, 0.25f), wing = new Color(0.55f, 0.22f, 0.3f),
+                tail = new Color(0.6f, 0.22f, 0.3f), cheek = new Color(1f, 0.85f, 0.4f), beak = new Color(0.3f, 0.2f, 0.2f),
+            },
+            new Palette
+            {
+                name = "Turquoise Tanager", back = new Color(0.25f, 0.78f, 0.78f), breast = new Color(1f, 0.85f, 0.35f),
+                belly = new Color(0.98f, 0.94f, 0.7f), head = new Color(0.2f, 0.62f, 0.85f), wing = new Color(0.18f, 0.4f, 0.62f),
+                tail = new Color(0.18f, 0.42f, 0.65f), cheek = new Color(0.98f, 0.98f, 0.96f), beak = new Color(0.22f, 0.2f, 0.24f),
+            },
+            new Palette
+            {
+                name = "Rose Sparrow", back = new Color(0.82f, 0.48f, 0.62f), breast = new Color(1f, 0.7f, 0.8f),
+                belly = new Color(1f, 0.92f, 0.95f), head = new Color(0.62f, 0.38f, 0.7f), wing = new Color(0.55f, 0.36f, 0.6f),
+                tail = new Color(0.5f, 0.32f, 0.58f), cheek = new Color(1f, 0.55f, 0.7f), beak = new Color(1f, 0.72f, 0.4f),
+            },
+        };
+
+        /// <summary>
+        /// A dark twisted tree whose branches end in pastel crystals, in the volcano world, with little birds
+        /// hopping between its branches and the warm ground.
+        /// </summary>
+        public static TreeBirds CreateCrystalTreeBirds(Transform parent, Material mat, AudioClip[] songs, Vector2 spot)
+        {
+            var rnd = new System.Random(91);
+            float g = VolcanoGround.HeightAt(spot.x, spot.y);
+            Vector3 basePos = new Vector3(spot.x, g, spot.y);
+            Vector3 toViewer = new Vector3(-spot.x, 0f, -spot.y).normalized;
+            Color bark = new Color(0.3f, 0.19f, 0.26f), barkLight = new Color(0.44f, 0.28f, 0.36f);
+            Color Bark(Vector3 p) => Color.Lerp(bark, barkLight, MeshKit.Hash01(p * 3f, 5) * 0.6f);
+
+            var kit = new MeshKit();
+            // Slightly bent trunk made of three pieces, with flaring roots.
+            Vector3 k1 = basePos + new Vector3(0.12f, 1.4f, 0.05f), k2 = basePos + new Vector3(-0.1f, 2.7f, 0f), top = basePos + new Vector3(0.05f, 3.6f, -0.05f);
+            kit.AddTube(basePos - Vector3.up * 0.3f, k1, 0.2f, 0.15f, 7, Bark, false, false);
+            kit.AddTube(k1, k2, 0.15f, 0.11f, 7, Bark, false, false);
+            kit.AddTube(k2, top, 0.11f, 0.06f, 7, Bark, false, true);
+            for (int i = 0; i < 4; i++)
+            {
+                Vector3 d = Quaternion.Euler(0f, i * 90f + 20f, 0f) * Vector3.forward;
+                kit.AddTube(basePos + Vector3.up * 0.3f, basePos + d * 0.45f - Vector3.up * 0.05f, 0.09f, 0.03f, 5, Bark, false, true);
+            }
+
+            // Crystal crown on top and side branches reaching out, each ending in a crystal cluster.
+            VolcanoBuilder.AddCrystalCluster(kit, top - Vector3.up * 0.05f, 0.75f, 1, rnd);
+            for (int b = 0; b < 3; b++)
+            {
+                Vector3 dir = Quaternion.Euler(0f, 70f + b * 115f, 0f) * toViewer;
+                Vector3 from = Vector3.Lerp(k1, k2, 0.3f + b * 0.3f);
+                Vector3 to = from + dir * 0.8f + Vector3.up * 0.55f;
+                kit.AddTube(from, to, 0.06f, 0.03f, 6, Bark, false, true);
+                VolcanoBuilder.AddCrystalCluster(kit, to, 0.42f, b + 2, rnd);
+            }
+
+            // Bare perch branches reaching towards the viewer, with a small crystal at the tip.
+            var perches = new List<Vector3>();
+            var ground = new List<bool>();
+            float[] heights = { 1.2f, 1.8f, 2.4f };
+            float[] angles = { -40f, 32f, -4f };
+            for (int b = 0; b < heights.Length; b++)
+            {
+                Vector3 dir = Quaternion.Euler(0f, angles[b], 0f) * toViewer;
+                float length = R(rnd, 1.1f, 1.4f);
+                Vector3 from = basePos + Vector3.up * heights[b];
+                Vector3 to = from + dir * length + Vector3.up * 0.25f;
+                const float r0 = 0.055f, r1 = 0.025f;
+                kit.AddTube(from - dir * 0.05f, to, r0, r1, 6, Bark, false, true);
+                VolcanoBuilder.AddCrystalCluster(kit, to + dir * 0.05f, 0.28f, b, rnd);
+                foreach (float f in new[] { 0.42f, 0.72f })
+                {
+                    perches.Add(Vector3.Lerp(from, to, f) + Vector3.up * Mathf.Lerp(r0, r1, f) * 0.9f);
+                    ground.Add(false);
+                }
+            }
+
+            // Pecking spots on the warm ground in front of the tree.
+            Vector3 side = Vector3.Cross(Vector3.up, toViewer);
+            foreach (float s in new[] { -0.7f, 0.1f, 0.8f })
+            {
+                Vector3 p = basePos + toViewer * 1.4f + side * s;
+                p.y = VolcanoGround.HeightAt(p.x, p.z);
+                perches.Add(p);
+                ground.Add(true);
+            }
+
+            var root = new GameObject("Crystal Tree");
+            root.transform.SetParent(parent, false);
+            var treeGo = new GameObject("Tree");
+            treeGo.transform.SetParent(root.transform, false);
+            treeGo.AddComponent<MeshFilter>().sharedMesh = MagicLandSetup.SaveMesh(kit.ToMesh("Crystal Tree"), "Crystal Tree");
+            var tr = treeGo.AddComponent<MeshRenderer>();
+            tr.sharedMaterial = mat;
+            tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            tr.receiveShadows = false;
+
+            var rigs = new BirdRig[4];
+            for (int i = 0; i < rigs.Length; i++)
+            {
+                rigs[i] = CreateBird(root.transform, "Crystal Bird " + i, CrystalTreePalettes[i % CrystalTreePalettes.Length], 2.4f, mat, true);
+                rigs[i].root.localPosition = perches[i * 2];
+            }
+
+            var birds = root.AddComponent<TreeBirds>();
+            birds.Configure(rigs, perches.ToArray(), ground.ToArray(), songs ?? new AudioClip[0], true);
+            return birds;
+        }
+
+        /// <summary>Three colorful birds gliding in wide circles in front of the viewer.</summary>
+        public static SoaringBirds CreateSoaringBirds(Transform parent, Material mat)
+        {
+            var root = new GameObject("Soaring Birds");
+            root.transform.SetParent(parent, false);
+            var rigs = new BirdRig[3];
+            for (int i = 0; i < rigs.Length; i++)
+                rigs[i] = CreateBird(root.transform, "Soaring Bird " + i, SoarPalettes[i % SoarPalettes.Length], 5f, mat, false);
+            var birds = root.AddComponent<SoaringBirds>();
+            birds.Configure(rigs,
+                new[] { new Vector3(-9f, 8.5f, 24f), new Vector3(8f, 10.5f, 29f), new Vector3(1f, 13f, 38f) },
+                new[] { 7f, 9f, 6f },
+                new[] { 0.12f, -0.1f, 0.15f });
+            // Put them on their circles right away (otherwise they sit on the viewer until the first frame).
+            birds.Step(0f);
+            return birds;
+        }
     }
 }
